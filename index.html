@@ -519,6 +519,26 @@
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body
         });
+
+        // Final fallback: GET beacon path that Apps Script handles via doGet(action=checkin).
+        // This bypasses fetch CORS-read restrictions in some embedded/captive environments.
+        const q = new URLSearchParams({ action: "checkin" });
+        Object.entries(payload || {}).forEach(([k, v]) => {
+          if (v === null || v === undefined) return;
+          q.append(k, String(v));
+        });
+
+        const beaconUrl = `${CONFIG.APPS_SCRIPT_URL}?${q.toString()}`;
+        const beaconOk = await new Promise((resolve) => {
+          const img = new Image();
+          const done = (ok) => { img.onload = null; img.onerror = null; resolve(ok); };
+          const t = setTimeout(() => done(false), 5000);
+          img.onload = () => { clearTimeout(t); done(true); };
+          img.onerror = () => { clearTimeout(t); done(false); };
+          img.src = beaconUrl;
+        });
+
+        if (beaconOk) return { ok: true, mode: "get-beacon-fallback" };
         return { ok: false, error: "Unable to verify save (network/CORS). Please ask staff to confirm in sheet." };
       }
     }

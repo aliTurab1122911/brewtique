@@ -144,8 +144,39 @@ function resumeMessaging() {
 
 /** --------------------------- Web Endpoints --------------------------- */
 function doGet(e) {
-  // Meta webhook verification flow
+  // CORS-proof check-in path for restrictive browsers/webviews.
   const p = (e && e.parameter) ? e.parameter : {};
+  if (String(p.action || '') === 'checkin') {
+    try {
+      const payload = {
+        visit_id: p.visit_id || '',
+        name: p.name || '',
+        phone_e164: p.phone_e164 || '',
+        phone_raw: p.phone_raw || '',
+        country_code: p.country_code || '',
+        national_number: p.national_number || '',
+        whatsapp: p.whatsapp || '',
+        ip: p.ip || '',
+        user_agent: p.user_agent || '',
+        language: p.language || '',
+        platform: p.platform || '',
+        screen: p.screen || '',
+        device_timezone: p.device_timezone || '',
+        duplicate_hint: p.duplicate_hint || ''
+      };
+      const res = ingestCheckin_(payload);
+      return ContentService
+        .createTextOutput(JSON.stringify(res))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      auditError_('do_get_checkin_error', { err: String(err) });
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: false, error: 'GET_CHECKIN_ERROR' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // Meta webhook verification flow
   const mode = p['hub.mode'];
   const token = p['hub.verify_token'];
   const challenge = p['hub.challenge'];
