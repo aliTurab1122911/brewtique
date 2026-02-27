@@ -368,7 +368,7 @@
       BRAND_NAME: "Brewtique",
 
       // Your Google Apps Script Web App URL (we’ll create this next)
-      APPS_SCRIPT_URL: "PASTE_YOUR_APPS_SCRIPT_WEBAPP_URL_HERE",
+      APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyGxG_VFgtQvY02Qw3rfvnDnpOU36ZylontHxcfajqSmAFldZvkYpqvqHEiEMRkjRQ/exec",
 
       // Menu + Wi-Fi
       MENU_URL: "menuBrewtique.pdf",
@@ -377,7 +377,7 @@
       WIFI_QR_SRC: "qr.png",
 
       // Logging timezone requirement
-      TIMEZONE_LABEL: "UTC"
+      TIMEZONE_LABEL: "America/Los_Angeles"
     };
 
     /*****************************************************************
@@ -624,6 +624,10 @@
 
         ip: ip || "",
         user_agent: navigator.userAgent || "",
+        language: navigator.language || "",
+        platform: navigator.platform || "",
+        screen: `${window.screen?.width || ""}x${window.screen?.height || ""}`,
+        device_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
         duplicate_hint: dupHint
       };
 
