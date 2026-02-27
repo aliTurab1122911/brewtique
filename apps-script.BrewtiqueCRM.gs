@@ -18,7 +18,7 @@ const CONFIG = {
   TIMEZONE: 'America/Los_Angeles',
 
   SHEETS: {
-    CHECKINS: 'Checkins',
+    CHECKINS: 'Checkkins',
     PROFILES: 'Customer_Profiles',
     RETENTION_QUEUE: 'Retention_Queue',
     ANALYTICS: 'Analytics_Daily',
@@ -186,7 +186,7 @@ function doPost(e) {
 /** --------------------------- Ingestion --------------------------- */
 function ingestCheckin_(payload) {
   const ss = getSpreadsheet_();
-  const checkins = ss.getSheetByName(CONFIG.SHEETS.CHECKINS);
+  const checkins = getCheckinsSheet_(ss) || ensureSheet_(ss, CONFIG.SHEETS.CHECKINS, CONFIG.HEADERS.CHECKINS);
   const profiles = ss.getSheetByName(CONFIG.SHEETS.PROFILES);
 
   const name = String(payload.name || '').trim();
@@ -585,7 +585,7 @@ function sendWhatsAppTemplate_(toE164, templateName, customerName) {
 function updateDailyAnalytics_(dayPt, sentDelta, failedDelta) {
   const ss = getSpreadsheet_();
   const a = ss.getSheetByName(CONFIG.SHEETS.ANALYTICS);
-  const c = ss.getSheetByName(CONFIG.SHEETS.CHECKINS);
+  const c = getCheckinsSheet_(ss) || ensureSheet_(ss, CONFIG.SHEETS.CHECKINS, CONFIG.HEADERS.CHECKINS);
   const p = ss.getSheetByName(CONFIG.SHEETS.PROFILES);
   const q = ss.getSheetByName(CONFIG.SHEETS.RETENTION_QUEUE);
 
@@ -666,6 +666,21 @@ function guardOrExit_(fnName) {
 
 function getSpreadsheet_() {
   return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+}
+
+function getSheetWithFallback_(ss, primary, fallbacks) {
+  const names = [primary].concat(fallbacks || []);
+  for (let i = 0; i < names.length; i++) {
+    const n = names[i];
+    if (!n) continue;
+    const sh = ss.getSheetByName(n);
+    if (sh) return sh;
+  }
+  return null;
+}
+
+function getCheckinsSheet_(ss) {
+  return getSheetWithFallback_(ss, CONFIG.SHEETS.CHECKINS, ['Checkins', 'Sheet1']);
 }
 
 function ensureSheet_(ss, name, headers) {

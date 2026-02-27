@@ -512,14 +512,14 @@
         return { ok: r.ok, raw };
       } catch (err) {
         // Fallback for strict CORS/opaque contexts (common on some mobile captive portals).
-        // This still sends the payload but browser may not allow reading response.
+        // This attempts delivery, but we still require explicit server confirmation before UI success.
         await fetch(CONFIG.APPS_SCRIPT_URL, {
           method: "POST",
           mode: "no-cors",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body
         });
-        return { ok: true, mode: "no-cors-fallback" };
+        return { ok: false, error: "Unable to verify save (network/CORS). Please ask staff to confirm in sheet." };
       }
     }
 
@@ -655,9 +655,8 @@
         const resp = await postCheckin(payload);
 
         const accepted = !!resp && (resp.ok === true || resp.success === true || resp.status === "ok");
-        const transportOk = !!resp && resp.ok !== false;
 
-        if (!accepted && !transportOk) {
+        if (!accepted) {
           throw new Error(resp?.error || "Upload failed");
         }
 
