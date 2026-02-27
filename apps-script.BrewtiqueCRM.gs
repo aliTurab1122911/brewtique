@@ -194,9 +194,26 @@ function doGet(e) {
 function doPost(e) {
   try {
     const raw = (e && e.postData && e.postData.contents) ? e.postData.contents : '';
-    if (!raw) return jsonOut_({ ok: false, error: 'EMPTY_BODY' });
+    let body = null;
 
-    const body = JSON.parse(raw);
+    if (raw) {
+      try {
+        body = JSON.parse(raw);
+      } catch (_) {
+        body = null;
+      }
+    }
+
+    // Form/iframe fallback may post urlencoded payload=<json>
+    if (!body && e && e.parameter && e.parameter.payload) {
+      try {
+        body = JSON.parse(String(e.parameter.payload));
+      } catch (_) {
+        body = null;
+      }
+    }
+
+    if (!body) return jsonOut_({ ok: false, error: 'EMPTY_OR_INVALID_BODY' });
 
     // If payload matches Meta webhook shape => handle status webhook
     if (body && body.entry && Array.isArray(body.entry)) {

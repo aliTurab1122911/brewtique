@@ -129,10 +129,11 @@ If the form shows `Couldn’t save your check-in ... (Failed to fetch)`:
 2. Re-deploy Web App after code updates (new deployment version).
 3. Open Web App URL directly in browser and confirm it responds.
 4. If testing from a captive portal / embedded webview, CORS can block reading responses.  
-   The page now includes a `no-cors` POST fallback and a final `doGet?action=checkin` beacon fallback for those environments.
+   The page now includes a `no-cors` POST fallback and a final hidden form/iframe POST fallback for those environments.
 5. In Apps Script, check `Audit_Log` and `Executions` to confirm requests are arriving.
+6. The final fallback submits `payload=<json>` using a hidden form/iframe POST; ensure your Apps Script `doPost` supports parsing `e.parameter.payload`.
 
-6. Ensure your check-in tab name matches the configured name. This project now targets **`Checkkins`** (matching your workbook screenshot) and also supports fallback reads from `Checkins`/`Sheet1` if present.
+7. Ensure your check-in tab name matches the configured name. This project now targets **`Checkkins`** (matching your workbook screenshot) and also supports fallback reads from `Checkins`/`Sheet1` if present.
 
 
 

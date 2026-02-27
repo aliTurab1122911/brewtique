@@ -520,26 +520,42 @@
           body
         });
 
-        // Final fallback: GET beacon path that Apps Script handles via doGet(action=checkin).
-        // This bypasses fetch CORS-read restrictions in some embedded/captive environments.
-        const q = new URLSearchParams({ action: "checkin" });
-        Object.entries(payload || {}).forEach(([k, v]) => {
-          if (v === null || v === undefined) return;
-          q.append(k, String(v));
+        // Final fallback: hidden form POST (iframe target), avoids CORS response-read limits
+        // and avoids URL length limits that can break beacon/query-based fallbacks.
+        const formOk = await new Promise((resolve) => {
+          const frameName = `checkinFrame_${Date.now()}`;
+          const iframe = document.createElement("iframe");
+          iframe.name = frameName;
+          iframe.style.display = "none";
+
+          const f = document.createElement("form");
+          f.method = "POST";
+          f.action = CONFIG.APPS_SCRIPT_URL;
+          f.target = frameName;
+          f.style.display = "none";
+
+          const inp = document.createElement("input");
+          inp.type = "hidden";
+          inp.name = "payload";
+          inp.value = JSON.stringify(payload);
+          f.appendChild(inp);
+
+          document.body.appendChild(iframe);
+          document.body.appendChild(f);
+
+          const cleanup = () => {
+            try { f.remove(); } catch {}
+            try { iframe.remove(); } catch {}
+          };
+
+          const t = setTimeout(() => { cleanup(); resolve(false); }, 7000);
+          iframe.onload = () => { clearTimeout(t); cleanup(); resolve(true); };
+
+          try { f.submit(); } catch { clearTimeout(t); cleanup(); resolve(false); }
         });
 
-        const beaconUrl = `${CONFIG.APPS_SCRIPT_URL}?${q.toString()}`;
-        const beaconOk = await new Promise((resolve) => {
-          const img = new Image();
-          const done = (ok) => { img.onload = null; img.onerror = null; resolve(ok); };
-          const t = setTimeout(() => done(false), 5000);
-          img.onload = () => { clearTimeout(t); done(true); };
-          img.onerror = () => { clearTimeout(t); done(false); };
-          img.src = beaconUrl;
-        });
-
-        if (beaconOk) return { ok: true, mode: "get-beacon-fallback" };
-        return { ok: false, error: "Unable to verify save (network/CORS). Check Apps Script deployment: Execute as Me + Who has access Anyone." };
+        if (formOk) return { ok: true, mode: "form-post-fallback" };
+        return { ok: false, error: "Unable to verify save (network/CORS). Check deployment (Execute as Me + Anyone) and retry." };
       }
     }
 
