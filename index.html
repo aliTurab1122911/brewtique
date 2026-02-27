@@ -539,7 +539,7 @@
         });
 
         if (beaconOk) return { ok: true, mode: "get-beacon-fallback" };
-        return { ok: false, error: "Unable to verify save (network/CORS). Please ask staff to confirm in sheet." };
+        return { ok: false, error: "Unable to verify save (network/CORS). Check Apps Script deployment: Execute as Me + Who has access Anyone." };
       }
     }
 

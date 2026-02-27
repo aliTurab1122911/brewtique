@@ -66,8 +66,8 @@ In Apps Script: **Project Settings → Script properties**, set these:
 
 1. Click **Deploy → New deployment**.
 2. Type: **Web app**.
-3. Execute as: **Me**.
-4. Who has access: **Anyone**.
+3. Execute as: **Me** (**required** for public check-ins).
+4. Who has access: **Anyone** (**required** for customers without Google login).
 5. Deploy and copy Web app URL.
 
 > Your current URL is already in `index.html`.
@@ -134,3 +134,18 @@ If the form shows `Couldn’t save your check-in ... (Failed to fetch)`:
 
 6. Ensure your check-in tab name matches the configured name. This project now targets **`Checkkins`** (matching your workbook screenshot) and also supports fallback reads from `Checkins`/`Sheet1` if present.
 
+
+
+## 13) Critical deployment settings (fixes your current error)
+
+Your latest deployment screenshot shows:
+- Execute as: **User accessing the web app**
+- Who has access: **Anyone with Google account**
+
+Those settings will fail for walk-in customers and often surface as fetch/CORS errors in the page.
+
+Set deployment to:
+- **Execute as: Me**
+- **Who has access: Anyone**
+
+Then create a **new deployment version** and update `CONFIG.APPS_SCRIPT_URL` if the URL changes.
