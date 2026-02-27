@@ -499,8 +499,15 @@
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload)
       });
-      // Apps Script will respond with JSON
-      return await r.json();
+
+      // Some Apps Script deployments return JSON, others return plain text/HTML.
+      // We accept both as long as the HTTP status is OK.
+      const raw = await r.text();
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch {}
+
+      if (parsed && typeof parsed === "object") return parsed;
+      return { ok: r.ok, raw };
     }
 
     /*****************************************************************
@@ -634,7 +641,10 @@
       try{
         const resp = await postCheckin(payload);
 
-        if (!resp || resp.ok !== true) {
+        const accepted = !!resp && (resp.ok === true || resp.success === true || resp.status === "ok");
+        const transportOk = !!resp && resp.ok !== false;
+
+        if (!accepted && !transportOk) {
           throw new Error(resp?.error || "Upload failed");
         }
 
@@ -643,7 +653,8 @@
         mainPanel.classList.remove("hidden");
 
       }catch(err){
-        errEl.textContent = "Couldn’t save your check-in. Please try again or ask staff.";
+        const details = err && err.message ? ` (${err.message})` : "";
+        errEl.textContent = "Couldn’t save your check-in. Please try again or ask staff." + details;
       }finally{
         setLoading(false);
       }
