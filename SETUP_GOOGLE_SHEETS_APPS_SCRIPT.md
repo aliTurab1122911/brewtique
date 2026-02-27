@@ -120,3 +120,15 @@ Subscribe to message status fields so delivery/read/failed updates are posted to
 - Run `stopAllMessaging()` to halt dispatch loops.
 - Run `resumeMessaging()` to continue.
 
+
+## 12) Troubleshooting “Failed to fetch” on check-in
+
+If the form shows `Couldn’t save your check-in ... (Failed to fetch)`:
+
+1. Confirm Apps Script deployment access is set to **Anyone**.
+2. Re-deploy Web App after code updates (new deployment version).
+3. Open Web App URL directly in browser and confirm it responds.
+4. If testing from a captive portal / embedded webview, CORS can block reading responses.  
+   The page now includes a `no-cors` fallback send path for those environments.
+5. In Apps Script, check `Audit_Log` and `Executions` to confirm requests are arriving.
+

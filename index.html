@@ -494,20 +494,33 @@
      * 5) POST TO APPS SCRIPT (expects JSON response)
      *****************************************************************/
     async function postCheckin(payload){
-      const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload)
-      });
+      const body = JSON.stringify(payload);
 
-      // Some Apps Script deployments return JSON, others return plain text/HTML.
-      // We accept both as long as the HTTP status is OK.
-      const raw = await r.text();
-      let parsed = null;
-      try { parsed = JSON.parse(raw); } catch {}
+      try {
+        const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body
+        });
 
-      if (parsed && typeof parsed === "object") return parsed;
-      return { ok: r.ok, raw };
+        // Some Apps Script deployments return JSON, others return plain text/HTML.
+        const raw = await r.text();
+        let parsed = null;
+        try { parsed = JSON.parse(raw); } catch {}
+
+        if (parsed && typeof parsed === "object") return parsed;
+        return { ok: r.ok, raw };
+      } catch (err) {
+        // Fallback for strict CORS/opaque contexts (common on some mobile captive portals).
+        // This still sends the payload but browser may not allow reading response.
+        await fetch(CONFIG.APPS_SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body
+        });
+        return { ok: true, mode: "no-cors-fallback" };
+      }
     }
 
     /*****************************************************************
