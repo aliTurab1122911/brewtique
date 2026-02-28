@@ -368,7 +368,7 @@
       BRAND_NAME: "Brewtique",
 
       // Your Google Apps Script Web App URL (we’ll create this next)
-      APPS_SCRIPT_URL: "PASTE_YOUR_APPS_SCRIPT_WEBAPP_URL_HERE",
+      APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyGxG_VFgtQvY02Qw3rfvnDnpOU36ZylontHxcfajqSmAFldZvkYpqvqHEiEMRkjRQ/exec",
 
       // Menu + Wi-Fi
       MENU_URL: "menuBrewtique.pdf",
@@ -377,7 +377,7 @@
       WIFI_QR_SRC: "qr.png",
 
       // Logging timezone requirement
-      TIMEZONE_LABEL: "UTC"
+      TIMEZONE_LABEL: "America/Los_Angeles"
     };
 
     /*****************************************************************
@@ -494,13 +494,69 @@
      * 5) POST TO APPS SCRIPT (expects JSON response)
      *****************************************************************/
     async function postCheckin(payload){
-      const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload)
-      });
-      // Apps Script will respond with JSON
-      return await r.json();
+      const body = JSON.stringify(payload);
+
+      try {
+        const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body
+        });
+
+        // Some Apps Script deployments return JSON, others return plain text/HTML.
+        const raw = await r.text();
+        let parsed = null;
+        try { parsed = JSON.parse(raw); } catch {}
+
+        if (parsed && typeof parsed === "object") return parsed;
+        return { ok: r.ok, raw };
+      } catch (err) {
+        // Fallback for strict CORS/opaque contexts (common on some mobile captive portals).
+        // This attempts delivery, but we still require explicit server confirmation before UI success.
+        await fetch(CONFIG.APPS_SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body
+        });
+
+        // Final fallback: hidden form POST (iframe target), avoids CORS response-read limits
+        // and avoids URL length limits that can break beacon/query-based fallbacks.
+        const formOk = await new Promise((resolve) => {
+          const frameName = `checkinFrame_${Date.now()}`;
+          const iframe = document.createElement("iframe");
+          iframe.name = frameName;
+          iframe.style.display = "none";
+
+          const f = document.createElement("form");
+          f.method = "POST";
+          f.action = CONFIG.APPS_SCRIPT_URL;
+          f.target = frameName;
+          f.style.display = "none";
+
+          const inp = document.createElement("input");
+          inp.type = "hidden";
+          inp.name = "payload";
+          inp.value = JSON.stringify(payload);
+          f.appendChild(inp);
+
+          document.body.appendChild(iframe);
+          document.body.appendChild(f);
+
+          const cleanup = () => {
+            try { f.remove(); } catch {}
+            try { iframe.remove(); } catch {}
+          };
+
+          const t = setTimeout(() => { cleanup(); resolve(false); }, 7000);
+          iframe.onload = () => { clearTimeout(t); cleanup(); resolve(true); };
+
+          try { f.submit(); } catch { clearTimeout(t); cleanup(); resolve(false); }
+        });
+
+        if (formOk) return { ok: true, mode: "form-post-fallback" };
+        return { ok: false, error: "Unable to verify save (network/CORS). Check deployment (Execute as Me + Anyone) and retry." };
+      }
     }
 
     /*****************************************************************
@@ -624,13 +680,19 @@
 
         ip: ip || "",
         user_agent: navigator.userAgent || "",
+        language: navigator.language || "",
+        platform: navigator.platform || "",
+        screen: `${window.screen?.width || ""}x${window.screen?.height || ""}`,
+        device_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
         duplicate_hint: dupHint
       };
 
       try{
         const resp = await postCheckin(payload);
 
-        if (!resp || resp.ok !== true) {
+        const accepted = !!resp && (resp.ok === true || resp.success === true || resp.status === "ok");
+
+        if (!accepted) {
           throw new Error(resp?.error || "Upload failed");
         }
 
@@ -639,7 +701,8 @@
         mainPanel.classList.remove("hidden");
 
       }catch(err){
-        errEl.textContent = "Couldn’t save your check-in. Please try again or ask staff.";
+        const details = err && err.message ? ` (${err.message})` : "";
+        errEl.textContent = "Couldn’t save your check-in. Please try again or ask staff." + details;
       }finally{
         setLoading(false);
       }
