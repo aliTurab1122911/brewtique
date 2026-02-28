@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProfileCategory {
+  new
+  loyal
+  irregular
+}
+
+enum MessageState {
+  false_flag
+  pending
+  true_flag
+}
+
+enum DeliveryStatus {
+  not_sent
+  sent
+}
+
+enum SignInStatus {
+  new_entry
+  duplicate_same_day
+}
+
+model Tenant {
+  id          String          @id @default(cuid())
+  slug        String          @unique
+  name        String
+  timezone    String          @default("America/Los_Angeles")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  settings    TenantSetting?
+  signIns     SignIn[]
+  profiles    CustomerProfile[]
+  messageJobs MessageJob[]
+}
+
+model TenantSetting {
+  id                 String  @id @default(cuid())
+  tenantId           String  @unique
+  loyalWindowDays    Int     @default(7)
+  loyalMinVisits     Int     @default(2)
+  irregularAfterDays Int     @default(14)
+  tenant             Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model SignIn {
+  id             String       @id @default(cuid())
+  tenantId       String
+  occurredAtUtc  DateTime
+  dateUtc        DateTime
+  timestampPt    DateTime
+  name           String
+  countryCode    String
+  nationalNumber String
+  phoneE164      String
+  whatsappLink   String
+  ip             String?
+  status         SignInStatus
+  rawPayload     Json
+  createdAt      DateTime     @default(now())
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, phoneE164, dateUtc])
+  @@index([tenantId, occurredAtUtc])
+}
+
+model CustomerProfile {
+  id             String          @id @default(cuid())
+  tenantId       String
+  phoneE164      String
+  name           String
+  countryCode    String
+  nationalNumber String
+  firstCheckinAt DateTime
+  lastVisitAt    DateTime?
+  currentVisitAt DateTime
+  durationDays   Int?
+  visitCount     Int             @default(1)
+  lastCategory   ProfileCategory @default(new)
+  messageIsSent  MessageState    @default(false_flag)
+  status         DeliveryStatus  @default(not_sent)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phoneE164])
+  @@index([tenantId, lastCategory])
+}
+
+model MessageJob {
+  id            String         @id @default(cuid())
+  tenantId      String
+  profileId     String
+  templateKey   String
+  payload       Json
+  status        DeliveryStatus @default(not_sent)
+  createdAt     DateTime       @default(now())
+  lastAttemptAt DateTime?
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
