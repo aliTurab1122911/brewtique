@@ -495,80 +495,86 @@
    *    This matches the Apps Script parser and avoids most preflight/CORS issues.
    *****************************************************************/
   async function postCheckin(payload){
-    const url = CONFIG.APPS_SCRIPT_URL;
+  const url = CONFIG.APPS_SCRIPT_URL;
 
-    const formBody = new URLSearchParams();
-    formBody.set("payload", JSON.stringify(payload));
-
-    // Attempt #1: normal CORS fetch (works on many browsers; allows reading response)
-    try {
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body: formBody.toString(),
-        mode: "cors"
-      });
-
-      const raw = await r.text();
-      let parsed = null;
-      try { parsed = JSON.parse(raw); } catch {}
-
-      // Normalize response shape
-      if (parsed && typeof parsed === "object") return parsed;
-      return { accepted: r.ok, raw };
-
-    } catch (err) {
-      // Attempt #2: no-cors (delivery attempt; cannot read response)
-      try{
-        await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-          body: formBody.toString(),
-          mode: "no-cors"
-        });
-      }catch{}
-
-      // Attempt #3: hidden form POST to iframe (most compatible in captive portals)
-      const formOk = await new Promise((resolve) => {
-        const frameName = `checkinFrame_${Date.now()}`;
-
-        const iframe = document.createElement("iframe");
-        iframe.name = frameName;
-        iframe.style.display = "none";
-
-        const f = document.createElement("form");
-        f.method = "POST";
-        f.action = url;
-        f.target = frameName;
-        f.style.display = "none";
-
-        const inp = document.createElement("input");
-        inp.type = "hidden";
-        inp.name = "payload";
-        inp.value = JSON.stringify(payload);
-        f.appendChild(inp);
-
-        document.body.appendChild(iframe);
-        document.body.appendChild(f);
-
-        const cleanup = () => {
-          try { f.remove(); } catch {}
-          try { iframe.remove(); } catch {}
-        };
-
-        const t = setTimeout(() => { cleanup(); resolve(false); }, 7000);
-        iframe.onload = () => { clearTimeout(t); cleanup(); resolve(true); };
-
-        try { f.submit(); } catch { clearTimeout(t); cleanup(); resolve(false); }
-      });
-
-      // We can't truly verify server acceptance in opaque contexts.
-      // For UX we treat delivery as success, server will still record it.
-      if (formOk) return { accepted: true, mode: "form-post-fallback" };
-
-      return { accepted: false, error: "Unable to deliver check-in (network/CORS). Please retry." };
+  // ✅ Client-side idempotency key: keep it stable across retries for same submit
+  // Ensure your submit handler sets payload.visit_id once and does NOT regenerate on retries.
+  const visitId = payload && payload.visit_id ? String(payload.visit_id) : "";
+  if (visitId) {
+    // prevent accidental re-entry within 15 seconds
+    const k = "brewtique_submit_lock_" + visitId;
+    const now = Date.now();
+    const prev = Number(sessionStorage.getItem(k) || "0");
+    if (prev && (now - prev) < 15000) {
+      return { accepted: true, mode: "client-lock" };
     }
+    sessionStorage.setItem(k, String(now));
   }
+
+  const formBody = new URLSearchParams();
+  formBody.set("payload", JSON.stringify(payload));
+
+  // Attempt #1: try readable CORS (best experience when it works)
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: formBody.toString(),
+      mode: "cors",
+      cache: "no-store",
+      redirect: "follow",
+    });
+
+    const raw = await r.text();
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch {}
+
+    if (parsed && typeof parsed === "object") return parsed;
+    return { accepted: r.ok, raw };
+
+  } catch (err) {
+    // Attempt #2: hidden form POST to iframe (single delivery fallback)
+    const formOk = await new Promise((resolve) => {
+      const frameName = `checkinFrame_${Date.now()}`;
+
+      const iframe = document.createElement("iframe");
+      iframe.name = frameName;
+      iframe.style.display = "none";
+
+      const f = document.createElement("form");
+      f.method = "POST";
+      f.action = url;
+      f.target = frameName;
+      f.style.display = "none";
+
+      const inp = document.createElement("input");
+      inp.type = "hidden";
+      inp.name = "payload";
+      inp.value = JSON.stringify(payload);
+      f.appendChild(inp);
+
+      document.body.appendChild(iframe);
+      document.body.appendChild(f);
+
+      const cleanup = () => {
+        try { f.remove(); } catch {}
+        try { iframe.remove(); } catch {}
+      };
+
+      // Some environments never fire onload; treat "submitted" as success after a short delay
+      const t = setTimeout(() => { cleanup(); resolve(true); }, 1200);
+
+      iframe.onload = () => { clearTimeout(t); cleanup(); resolve(true); };
+
+      try { f.submit(); } catch { clearTimeout(t); cleanup(); resolve(false); }
+    });
+
+    if (formOk) return { accepted: true, mode: "form-post-fallback" };
+
+    return { accepted: false, error: "Unable to deliver check-in (network/CORS). Please retry." };
+  }
+}
+  
 
   /*****************************************************************
    * 6) UI WIRING
