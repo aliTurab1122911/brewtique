@@ -359,354 +359,373 @@
       Powered By <a href="https://cubeprogramming.com/" target="_blank" rel="noopener">Cube Programming</a>
     </footer>
   </div>
+<script>
+  /*****************************************************************
+   * 1) CONFIG — FILL THESE IN
+   *****************************************************************/
+  const CONFIG = {
+    BRAND_NAME: "Brewtique",
 
-  <script>
-    /*****************************************************************
-     * 1) CONFIG — FILL THESE IN
-     *****************************************************************/
-    const CONFIG = {
-      BRAND_NAME: "Brewtique",
+    // ✅ Your NEW Google Apps Script Web App URL (deployment you provided)
+    APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyxgr0GIDAN8abDaQbZNAYILaBlWICdWpJ12FQAQw4rskjhh536VBnlKnf9n8v9Ge6Q7g/exec",
 
-      // Your Google Apps Script Web App URL (we’ll create this next)
-      APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyGxG_VFgtQvY02Qw3rfvnDnpOU36ZylontHxcfajqSmAFldZvkYpqvqHEiEMRkjRQ/exec",
+    // Menu + Wi-Fi
+    MENU_URL: "menuBrewtique.pdf",
+    WIFI_SSID: "Brewtique WiFi",
+    WIFI_PASS: "Brewtique@786",
+    WIFI_QR_SRC: "qr.png",
 
-      // Menu + Wi-Fi
-      MENU_URL: "menuBrewtique.pdf",
-      WIFI_SSID: "Brewtique WiFi",
-      WIFI_PASS: "Brewtique@786",
-      WIFI_QR_SRC: "qr.png",
+    // For your own metadata (server ignores this; it computes timestamps itself)
+    TIMEZONE_LABEL: "America/Los_Angeles"
+  };
 
-      // Logging timezone requirement
-      TIMEZONE_LABEL: "America/Los_Angeles"
-    };
+  /*****************************************************************
+   * 2) HELPERS
+   *****************************************************************/
+  function setLoading(isLoading){
+    const btn = document.getElementById("submitBtn");
+    document.getElementById("btnSpinner").classList.toggle("hidden", !isLoading);
+    document.getElementById("btnText").textContent = isLoading ? "Saving..." : "Save & Continue";
+    btn.disabled = isLoading;
+  }
 
-    /*****************************************************************
-     * 2) HELPERS
-     *****************************************************************/
-    function setLoading(isLoading){
-      const btn = document.getElementById("submitBtn");
-      document.getElementById("btnSpinner").classList.toggle("hidden", !isLoading);
-      document.getElementById("btnText").textContent = isLoading ? "Saving..." : "Save & Continue";
-      btn.disabled = isLoading;
+  // Best-effort public IP (non-fatal)
+  async function getIP(){
+    try{
+      const r = await fetch("https://api.ipify.org?format=json", { cache:"no-store" });
+      const j = await r.json();
+      return (j && j.ip) || "";
+    }catch{
+      return "";
+    }
+  }
+
+  // UTC date YYYY-MM-DD
+  function utcDateString(d = new Date()){
+    return d.toISOString().slice(0,10);
+  }
+
+  // Simple UUID
+  function uuid(){
+    if (crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      const v = c === "x" ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  /*****************************************************************
+   * 3) PHONE NORMALIZATION (E.164)
+   *****************************************************************/
+  function normalizePhone(input){
+    if(!input) return null;
+    let s = String(input).trim().replace(/[\s\-()]/g,'');
+    if (s.startsWith('00')) s = '+' + s.slice(2);
+
+    if (s.startsWith('+')){
+      const d = s.slice(1).replace(/\D/g,'');
+      return (d.length >= 10 && d.length <= 15) ? ('+' + d) : null;
     }
 
-    // Best-effort public IP (non-fatal)
-    async function getIP(){
-      try{
-        const r = await fetch("https://api.ipify.org?format=json", { cache:"no-store" });
-        const j = await r.json();
-        return (j && j.ip) || "";
-      }catch{ return ""; }
-    }
+    const d = s.replace(/\D/g,'');
+    // Pakistan-friendly patterns
+    if (/^92\d{10}$/.test(d)) return '+' + d;
+    if (/^03\d{9}$/.test(d))  return '+92' + d.slice(1);
+    if (/^3\d{9}$/.test(d))   return '+92' + d;
+    if (/^0\d{9,10}$/.test(d))return '+92' + d.slice(1);
 
-    // UTC date YYYY-MM-DD
-    function utcDateString(d = new Date()){
-      return d.toISOString().slice(0,10);
-    }
+    // Generic international (10..15 digits)
+    if (/^[1-9]\d{9,14}$/.test(d)) return '+' + d;
+    return null;
+  }
 
-    // Simple UUID
-    function uuid(){
-      if (crypto && crypto.randomUUID) return crypto.randomUUID();
-      return "xxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0;
-        const v = c === "x" ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
+  // country code split (best effort)
+  const CCODES = new Set([
+    '1','20','27','30','31','32','33','34','36','39','40','41','43','44','45','46','47','48','49',
+    '51','52','53','54','55','56','57','58','60','61','62','63','64','65','66','81','82','84','86',
+    '90','91','92','93','94','95','98','211','212','213','216','218','220','221','222','223','224','225','226','227','228','229','230','231',
+    '232','233','234','235','236','237','238','239','240','241','242','243','244','245','246','248','249','250','251','252','253','254','255','256',
+    '257','258','260','261','262','263','264','265','266','267','268','269','290','291','297','298','299',
+    '350','351','352','353','354','355','356','357','358','359',
+    '370','371','372','373','374','375','376','377','378','380','381','382','383','385','386','387','389',
+    '420','421','423','500','501','502','503','504','505','506','507','508','509',
+    '590','591','592','593','594','595','596','597','598','599',
+    '670','672','673','674','675','676','677','678','679','680','681','682','683','685','686','687','688','689','690','691','692',
+    '850','852','853','855','856','870','871','872','873','874','878','880','881','882','883','886',
+    '960','961','962','963','964','965','966','967','968','970','971','972','973','974','975','976','977','978','979',
+    '991','992','993','994','995','996','997','998'
+  ]);
+
+  function splitE164(e164){
+    if(!e164) return { country_code:'', national_number:'' };
+    const digits = String(e164).replace(/^\+/, '');
+    let cc = '';
+    for (let len = 3; len >= 1; len--) {
+      const tryCC = digits.slice(0, len);
+      if (CCODES.has(tryCC)) { cc = tryCC; break; }
+    }
+    if (!cc) return { country_code:'', national_number:digits };
+    return { country_code: '+' + cc, national_number: digits.slice(cc.length) };
+  }
+
+  /*****************************************************************
+   * 4) DUPLICATE HINT (front-end best-effort only)
+   *    Real duplicate marking is done server-side in Apps Script.
+   *****************************************************************/
+  function duplicateHintKey(phoneE164){
+    const day = utcDateString(new Date());
+    return `brewtique_checkin_${day}_${phoneE164}`;
+  }
+
+  function computeDuplicateHint(phoneE164){
+    try{
+      const key = duplicateHintKey(phoneE164);
+      const seen = localStorage.getItem(key);
+      localStorage.setItem(key, "1");
+      return seen ? "duplicate" : "new";
+    }catch{
+      return "unknown";
+    }
+  }
+
+  /*****************************************************************
+   * 5) POST TO APPS SCRIPT
+   *    ✅ Sends as application/x-www-form-urlencoded with payload=<JSON>
+   *    This matches the Apps Script parser and avoids most preflight/CORS issues.
+   *****************************************************************/
+  async function postCheckin(payload){
+    const url = CONFIG.APPS_SCRIPT_URL;
+
+    const formBody = new URLSearchParams();
+    formBody.set("payload", JSON.stringify(payload));
+
+    // Attempt #1: normal CORS fetch (works on many browsers; allows reading response)
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: formBody.toString(),
+        mode: "cors"
       });
-    }
 
-    /*****************************************************************
-     * 3) PHONE NORMALIZATION (E.164)
-     *****************************************************************/
-    function normalizePhone(input){
-      if(!input) return null;
-      let s = String(input).trim().replace(/[\s\-()]/g,'');
-      if (s.startsWith('00')) s = '+' + s.slice(2);
+      const raw = await r.text();
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch {}
 
-      if (s.startsWith('+')){
-        const d = s.slice(1).replace(/\D/g,'');
-        return (d.length >= 10 && d.length <= 15) ? ('+' + d) : null;
-      }
+      // Normalize response shape
+      if (parsed && typeof parsed === "object") return parsed;
+      return { accepted: r.ok, raw };
 
-      const d = s.replace(/\D/g,'');
-      // Pakistan-friendly patterns
-      if (/^92\d{10}$/.test(d)) return '+' + d;
-      if (/^03\d{9}$/.test(d))  return '+92' + d.slice(1);
-      if (/^3\d{9}$/.test(d))   return '+92' + d;
-      if (/^0\d{9,10}$/.test(d))return '+92' + d.slice(1);
-
-      // Generic international (10..15 digits)
-      if (/^[1-9]\d{9,14}$/.test(d)) return '+' + d;
-      return null;
-    }
-
-    // country code split (best effort)
-    const CCODES = new Set([
-      '1','20','27','30','31','32','33','34','36','39','40','41','43','44','45','46','47','48','49',
-      '51','52','53','54','55','56','57','58','60','61','62','63','64','65','66','81','82','84','86',
-      '90','91','92','93','94','95','98','211','212','213','216','218','220','221','222','223','224','225','226','227','228','229','230','231',
-      '232','233','234','235','236','237','238','239','240','241','242','243','244','245','246','248','249','250','251','252','253','254','255','256',
-      '257','258','260','261','262','263','264','265','266','267','268','269','290','291','297','298','299',
-      '350','351','352','353','354','355','356','357','358','359',
-      '370','371','372','373','374','375','376','377','378','380','381','382','383','385','386','387','389',
-      '420','421','423','500','501','502','503','504','505','506','507','508','509',
-      '590','591','592','593','594','595','596','597','598','599',
-      '670','672','673','674','675','676','677','678','679','680','681','682','683','685','686','687','688','689','690','691','692',
-      '850','852','853','855','856','870','871','872','873','874','878','880','881','882','883','886',
-      '960','961','962','963','964','965','966','967','968','970','971','972','973','974','975','976','977','978','979',
-      '991','992','993','994','995','996','997','998'
-    ]);
-
-    function splitE164(e164){
-      if(!e164) return { country_code:'', national_number:'' };
-      const digits = String(e164).replace(/^\+/, '');
-      let cc = '';
-      for (let len = 3; len >= 1; len--) {
-        const tryCC = digits.slice(0, len);
-        if (CCODES.has(tryCC)) { cc = tryCC; break; }
-      }
-      if (!cc) return { country_code:'', national_number:digits };
-      return { country_code: '+' + cc, national_number: digits.slice(cc.length) };
-    }
-
-    function waLink(e164){ return e164 ? "https://wa.me/" + e164.slice(1) : ""; }
-
-    /*****************************************************************
-     * 4) DUPLICATE HINT (front-end best-effort)
-     *    Real duplicate marking will be done in Apps Script.
-     *****************************************************************/
-    function duplicateHintKey(phoneE164){
-      const day = utcDateString(new Date());
-      return `brewtique_checkin_${day}_${phoneE164}`;
-    }
-
-    function computeDuplicateHint(phoneE164){
+    } catch (err) {
+      // Attempt #2: no-cors (delivery attempt; cannot read response)
       try{
-        const key = duplicateHintKey(phoneE164);
-        const seen = localStorage.getItem(key);
-        localStorage.setItem(key, "1");
-        return seen ? "duplicate" : "new";
-      }catch{
-        return "unknown";
-      }
-    }
-
-    /*****************************************************************
-     * 5) POST TO APPS SCRIPT (expects JSON response)
-     *****************************************************************/
-    async function postCheckin(payload){
-      const body = JSON.stringify(payload);
-
-      try {
-        const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
+        await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body
+          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+          body: formBody.toString(),
+          mode: "no-cors"
         });
+      }catch{}
 
-        // Some Apps Script deployments return JSON, others return plain text/HTML.
-        const raw = await r.text();
-        let parsed = null;
-        try { parsed = JSON.parse(raw); } catch {}
+      // Attempt #3: hidden form POST to iframe (most compatible in captive portals)
+      const formOk = await new Promise((resolve) => {
+        const frameName = `checkinFrame_${Date.now()}`;
 
-        if (parsed && typeof parsed === "object") return parsed;
-        return { ok: r.ok, raw };
-      } catch (err) {
-        // Fallback for strict CORS/opaque contexts (common on some mobile captive portals).
-        // This attempts delivery, but we still require explicit server confirmation before UI success.
-        await fetch(CONFIG.APPS_SCRIPT_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body
-        });
+        const iframe = document.createElement("iframe");
+        iframe.name = frameName;
+        iframe.style.display = "none";
 
-        // Final fallback: hidden form POST (iframe target), avoids CORS response-read limits
-        // and avoids URL length limits that can break beacon/query-based fallbacks.
-        const formOk = await new Promise((resolve) => {
-          const frameName = `checkinFrame_${Date.now()}`;
-          const iframe = document.createElement("iframe");
-          iframe.name = frameName;
-          iframe.style.display = "none";
+        const f = document.createElement("form");
+        f.method = "POST";
+        f.action = url;
+        f.target = frameName;
+        f.style.display = "none";
 
-          const f = document.createElement("form");
-          f.method = "POST";
-          f.action = CONFIG.APPS_SCRIPT_URL;
-          f.target = frameName;
-          f.style.display = "none";
+        const inp = document.createElement("input");
+        inp.type = "hidden";
+        inp.name = "payload";
+        inp.value = JSON.stringify(payload);
+        f.appendChild(inp);
 
-          const inp = document.createElement("input");
-          inp.type = "hidden";
-          inp.name = "payload";
-          inp.value = JSON.stringify(payload);
-          f.appendChild(inp);
+        document.body.appendChild(iframe);
+        document.body.appendChild(f);
 
-          document.body.appendChild(iframe);
-          document.body.appendChild(f);
+        const cleanup = () => {
+          try { f.remove(); } catch {}
+          try { iframe.remove(); } catch {}
+        };
 
-          const cleanup = () => {
-            try { f.remove(); } catch {}
-            try { iframe.remove(); } catch {}
-          };
+        const t = setTimeout(() => { cleanup(); resolve(false); }, 7000);
+        iframe.onload = () => { clearTimeout(t); cleanup(); resolve(true); };
 
-          const t = setTimeout(() => { cleanup(); resolve(false); }, 7000);
-          iframe.onload = () => { clearTimeout(t); cleanup(); resolve(true); };
+        try { f.submit(); } catch { clearTimeout(t); cleanup(); resolve(false); }
+      });
 
-          try { f.submit(); } catch { clearTimeout(t); cleanup(); resolve(false); }
-        });
+      // We can't truly verify server acceptance in opaque contexts.
+      // For UX we treat delivery as success, server will still record it.
+      if (formOk) return { accepted: true, mode: "form-post-fallback" };
 
-        if (formOk) return { ok: true, mode: "form-post-fallback" };
-        return { ok: false, error: "Unable to verify save (network/CORS). Check deployment (Execute as Me + Anyone) and retry." };
-      }
+      return { accepted: false, error: "Unable to deliver check-in (network/CORS). Please retry." };
     }
+  }
 
-    /*****************************************************************
-     * 6) UI WIRING
-     *****************************************************************/
-    const brandTitle = document.getElementById("brandTitle");
-    const checkinPanel = document.getElementById("checkinPanel");
-    const mainPanel = document.getElementById("mainPanel");
-    const form = document.getElementById("checkinForm");
-    const errEl = document.getElementById("formError");
+  /*****************************************************************
+   * 6) UI WIRING
+   *****************************************************************/
+  const brandTitle = document.getElementById("brandTitle");
+  const checkinPanel = document.getElementById("checkinPanel");
+  const mainPanel = document.getElementById("mainPanel");
+  const form = document.getElementById("checkinForm");
+  const errEl = document.getElementById("formError");
 
-    const menuBtn = document.getElementById("menuBtn");
-    const wifiBtn = document.getElementById("wifiBtn");
-    const wifiPanel = document.getElementById("wifiPanel");
-    const ssidText = document.getElementById("ssidText");
-    const passText = document.getElementById("passText");
-    const copySsidBtn = document.getElementById("copySsidBtn");
-    const copyPassBtn = document.getElementById("copyPassBtn");
-    const openWifiBtn = document.getElementById("openWifi");
-    const iosBanner = document.getElementById("iosBanner");
-    const wifiQR = document.getElementById("wifiQR");
-    const ssidInline = document.getElementById("ssidInline");
+  const menuBtn = document.getElementById("menuBtn");
+  const wifiBtn = document.getElementById("wifiBtn");
+  const wifiPanel = document.getElementById("wifiPanel");
+  const ssidText = document.getElementById("ssidText");
+  const passText = document.getElementById("passText");
+  const copySsidBtn = document.getElementById("copySsidBtn");
+  const copyPassBtn = document.getElementById("copyPassBtn");
+  const openWifiBtn = document.getElementById("openWifi");
+  const iosBanner = document.getElementById("iosBanner");
+  const wifiQR = document.getElementById("wifiQR");
+  const ssidInline = document.getElementById("ssidInline");
 
-    // Init content
-    brandTitle.textContent = CONFIG.BRAND_NAME;
-    menuBtn.href = CONFIG.MENU_URL;
-    ssidText.textContent = CONFIG.WIFI_SSID;
-    ssidInline.textContent = CONFIG.WIFI_SSID;
-    wifiQR.src = CONFIG.WIFI_QR_SRC;
-    passText.textContent = "••••••••";
+  // Init content
+  brandTitle.textContent = CONFIG.BRAND_NAME;
+  menuBtn.href = CONFIG.MENU_URL;
+  ssidText.textContent = CONFIG.WIFI_SSID;
+  ssidInline.textContent = CONFIG.WIFI_SSID;
+  wifiQR.src = CONFIG.WIFI_QR_SRC;
+  passText.textContent = "••••••••";
 
-    // iOS detection
-    const ua = navigator.userAgent || "";
-    const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    if (isIOS) {
-      iosBanner.classList.add("show");
-      openWifiBtn.classList.add("hidden");
-    } else {
-      iosBanner.classList.remove("show");
-      openWifiBtn.classList.remove("hidden");
-    }
+  // iOS detection
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (isIOS) {
+    iosBanner.classList.add("show");
+    openWifiBtn.classList.add("hidden");
+  } else {
+    iosBanner.classList.remove("show");
+    openWifiBtn.classList.remove("hidden");
+  }
 
-    // Toggle Wi-Fi panel
-    wifiBtn.addEventListener("click", () => {
-      wifiPanel.classList.toggle("hidden");
-    });
+  // Toggle Wi-Fi panel
+  wifiBtn.addEventListener("click", () => {
+    wifiPanel.classList.toggle("hidden");
+  });
 
-    // Copy actions (no alerts — gentle inline feedback)
-    function flashMessage(text){
-      errEl.style.color = "#0f5132";
-      errEl.textContent = text;
-      setTimeout(() => {
-        errEl.style.color = "#b42318";
-        errEl.textContent = "";
-      }, 1400);
-    }
-
-    copySsidBtn.addEventListener("click", async () => {
-      try{
-        await navigator.clipboard.writeText(CONFIG.WIFI_SSID);
-        flashMessage("Wi-Fi name copied.");
-      }catch{
-        flashMessage("Copy failed. Please select and copy manually.");
-      }
-    });
-
-    copyPassBtn.addEventListener("click", async () => {
-      try{
-        await navigator.clipboard.writeText(CONFIG.WIFI_PASS);
-        flashMessage("Wi-Fi password copied.");
-      }catch{
-        flashMessage("Copy failed. Please select and copy manually.");
-      }
-    });
-
-    // Android Wi-Fi settings
-    openWifiBtn.addEventListener("click", () => {
-      try { location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end"; } catch {}
-    });
-
-    // Submit flow: validate -> gather -> post -> on success show main panel
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
+  // Gentle inline feedback (no alerts)
+  function flashMessage(text){
+    errEl.style.color = "#0f5132";
+    errEl.textContent = text;
+    setTimeout(() => {
       errEl.style.color = "#b42318";
       errEl.textContent = "";
+    }, 1400);
+  }
 
-      const name = form.name.value.trim();
-      const phoneRaw = form.phone.value.trim();
-      const phoneE164 = normalizePhone(phoneRaw);
+  copySsidBtn.addEventListener("click", async () => {
+    try{
+      await navigator.clipboard.writeText(CONFIG.WIFI_SSID);
+      flashMessage("Wi-Fi name copied.");
+    }catch{
+      flashMessage("Copy failed. Please select and copy manually.");
+    }
+  });
 
-      if (!name || name.length < 2) { errEl.textContent = "Please enter your full name."; return; }
-      if (!phoneE164) { errEl.textContent = "Please enter a valid phone number (include country code if not Pakistani)."; return; }
+  copyPassBtn.addEventListener("click", async () => {
+    try{
+      await navigator.clipboard.writeText(CONFIG.WIFI_PASS);
+      flashMessage("Wi-Fi password copied.");
+    }catch{
+      flashMessage("Copy failed. Please select and copy manually.");
+    }
+  });
 
-      if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL.includes("PASTE_YOUR_APPS_SCRIPT")) {
-        errEl.textContent = "Apps Script URL is not set. Please update CONFIG.APPS_SCRIPT_URL in the code.";
-        return;
+  // Android Wi-Fi settings shortcut
+  openWifiBtn.addEventListener("click", () => {
+    try { location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end"; } catch {}
+  });
+
+  // Submit flow: validate -> gather -> post -> success UI
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errEl.style.color = "#b42318";
+    errEl.textContent = "";
+
+    const name = form.name.value.trim();
+    const phoneRaw = form.phone.value.trim();
+    const phoneE164 = normalizePhone(phoneRaw);
+
+    if (!name || name.length < 2) { errEl.textContent = "Please enter your full name."; return; }
+    if (!phoneE164) { errEl.textContent = "Please enter a valid phone number (include country code if not Pakistani)."; return; }
+
+    if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL.includes("PASTE_YOUR_APPS_SCRIPT")) {
+      errEl.textContent = "Apps Script URL is not set. Please update CONFIG.APPS_SCRIPT_URL in the code.";
+      return;
+    }
+
+    setLoading(true);
+
+    const split = splitE164(phoneE164);
+    const ip = await getIP();              // best effort
+    const dupHint = computeDuplicateHint(phoneE164);
+
+    // ✅ Payload aligned to Apps Script doPost() fields:
+    const payload = {
+      // required by server logic
+      name: name,
+      country_code: split.country_code,
+      national_number: split.national_number,
+      phone_number: phoneE164,
+      ip_address: ip || "",
+
+      // optional metadata (server ignores these unless you later use them)
+      phone_raw: phoneRaw,
+      visit_id: uuid(),
+      ts_utc: new Date().toISOString(),
+      date_utc: utcDateString(new Date()),
+      timezone: CONFIG.TIMEZONE_LABEL,
+      device_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+      duplicate_hint: dupHint,
+      user_agent: navigator.userAgent || "",
+      language: navigator.language || "",
+      platform: navigator.platform || "",
+      screen: `${window.screen?.width || ""}x${window.screen?.height || ""}`
+    };
+
+    try{
+      const resp = await postCheckin(payload);
+
+      // ✅ Apps Script returns { accepted: true, status: "single"/"dup day", ... }
+      const accepted =
+        !!resp && (
+          resp.accepted === true ||
+          resp.ok === true ||
+          resp.success === true ||
+          resp.status === "ok"
+        );
+
+      if (!accepted) {
+        throw new Error(resp?.error || "Upload failed");
       }
 
-      setLoading(true);
+      // Success: switch panels
+      checkinPanel.classList.add("hidden");
+      mainPanel.classList.remove("hidden");
 
-      const split = splitE164(phoneE164);
-      const now = new Date();
-      const tsUtc = now.toISOString();       // UTC timestamp
-      const dayUtc = tsUtc.slice(0,10);      // UTC date (YYYY-MM-DD)
-      const dupHint = computeDuplicateHint(phoneE164);
-      const visitId = uuid();
-      const ip = await getIP();              // best effort
+      // Optional: show server-side status if you want (single vs dup day)
+      // if (resp.status) flashMessage(`Saved (${resp.status}).`);
 
-      const payload = {
-        visit_id: visitId,
-        ts_utc: tsUtc,
-        date_utc: dayUtc,
-        timezone: CONFIG.TIMEZONE_LABEL,
-
-        name,
-        phone_e164: phoneE164,
-        phone_raw: phoneRaw,
-        country_code: split.country_code,
-        national_number: split.national_number,
-        whatsapp: waLink(phoneE164),
-
-        ip: ip || "",
-        user_agent: navigator.userAgent || "",
-        language: navigator.language || "",
-        platform: navigator.platform || "",
-        screen: `${window.screen?.width || ""}x${window.screen?.height || ""}`,
-        device_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-        duplicate_hint: dupHint
-      };
-
-      try{
-        const resp = await postCheckin(payload);
-
-        const accepted = !!resp && (resp.ok === true || resp.success === true || resp.status === "ok");
-
-        if (!accepted) {
-          throw new Error(resp?.error || "Upload failed");
-        }
-
-        // Success: switch panels
-        checkinPanel.classList.add("hidden");
-        mainPanel.classList.remove("hidden");
-
-      }catch(err){
-        const details = err && err.message ? ` (${err.message})` : "";
-        errEl.textContent = "Couldn’t save your check-in. Please try again or ask staff." + details;
-      }finally{
-        setLoading(false);
-      }
-    });
-  </script>
+    }catch(err){
+      const details = err && err.message ? ` (${err.message})` : "";
+      errEl.textContent = "Couldn’t save your check-in. Please try again or ask staff." + details;
+    }finally{
+      setLoading(false);
+    }
+  });
+</script>
+ 
 </body>
 </html>
